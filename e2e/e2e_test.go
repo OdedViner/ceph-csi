@@ -17,6 +17,9 @@ limitations under the License.
 package e2e
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -70,9 +73,37 @@ func setDefaultKubeconfig() {
 }
 
 func TestE2E(t *testing.T) {
+	f := framework.NewDefaultFramework("some tests")
+	ctx := context.TODO()
+	clientsets := getClientsets(ctx)
+	var stdout, stderr bytes.Buffer
+	fruits := []string{"health"}
+
+	err := execCmdInPod(ctx, clientsets, "ceph", "rook-ceph-tools-68bf47bc65-57pmq", "rook-ceph-tools", "rook-ceph", "rook-ceph", fruits, &stdout, &stderr, true)
+	if err != nil {
+		fmt.Println(err)
+	}
+	var imgInfos []string
+	err = json.Unmarshal(stdout.Bytes(), &imgInfos)
+	validateRBDImageCount(f, 1, "a")
 	t.Parallel()
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "E2e Suite")
+}
+
+func TestDebug(t *testing.T) {
+	f := framework.NewDefaultFramework("some tests")
+	ctx := context.TODO()
+	clientsets := getClientsets(ctx)
+	var stdout, stderr bytes.Buffer
+	fruits := []string{"health"}
+	err := execCmdInPod(ctx, clientsets, "ceph", "rook-ceph-tools-68bf47bc65-57pmq", "rook-ceph-tools", "rook-ceph", "rook-ceph", fruits, &stdout, &stderr, true)
+	if err != nil {
+		fmt.Println(err)
+	}
+	var imgInfos []string
+	err = json.Unmarshal(stdout.Bytes(), &imgInfos)
+	validateRBDImageCount(f, 1, "a")
 }
 
 func handleFlags() {

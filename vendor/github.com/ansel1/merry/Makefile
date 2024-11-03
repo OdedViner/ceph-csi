@@ -37,8 +37,7 @@ bench:
 ### TOOLS
 
 tools:
-	go get -u golang.org/x/tools/cmd/cover
-	go get -u golang.org/x/lint/golint
+	go install golang.org/x/tools/cmd/cover@latest
+	go install golang.org/x/lint/golint@latest
 
 .PHONY: all build lint clean fmt test coverage tools v2
-

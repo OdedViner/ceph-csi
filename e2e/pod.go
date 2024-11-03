@@ -20,6 +20,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rook/kubectl-rook-ceph/pkg/k8sutil"
+	rookclient "github.com/rook/rook/pkg/client/clientset/versioned"
+	"io"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -28,7 +35,9 @@ import (
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/client/conditions"
 	"k8s.io/kubernetes/test/e2e/framework"
 	e2epod "k8s.io/kubernetes/test/e2e/framework/pod"
@@ -721,5 +730,116 @@ func verifyReadAffinity(
 		return fmt.Errorf("failed to delete PVC and application: %w", err)
 	}
 
+	return nil
+}
+
+func getClientsets(ctx context.Context) *k8sutil.Clientsets {
+	var err error
+	var kubeContext string
+	clientsets := &k8sutil.Clientsets{}
+
+	congfigOverride := &clientcmd.ConfigOverrides{}
+	if kubeContext != "" {
+		congfigOverride = &clientcmd.ConfigOverrides{CurrentContext: kubeContext}
+	}
+
+	// 1. Create Kubernetes Client
+	kubeconfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(),
+		congfigOverride,
+	)
+
+	clientsets.KubeConfig, err = kubeconfig.ClientConfig()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	clientsets.Rook, err = rookclient.NewForConfig(clientsets.KubeConfig)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	clientsets.Kube, err = k8s.NewForConfig(clientsets.KubeConfig)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	clientsets.Dynamic, err = dynamic.NewForConfig(clientsets.KubeConfig)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	return clientsets
+}
+
+// execCmdInPod exec command on specific pod and wait the command's output.
+func execCmdInPod(ctx context.Context, clientsets *k8sutil.Clientsets,
+	command, podName, containerName, podNamespace, clusterNamespace string,
+	args []string, stdout, stderr io.Writer, returnOutput bool) error {
+
+	if len(args) < 1 {
+		return fmt.Errorf("no arg passed to exec with %q command", command)
+	}
+
+	cmd := []string{}
+	cmd = append(cmd, command)
+	cmd = append(cmd, args...)
+
+	if containerName == "rook-ceph-tools" {
+		cmd = append(cmd, "--connect-timeout=10")
+	} else if cmd[0] == "ceph" {
+		if len(cmd) > 1 && cmd[1] == "daemon" {
+			cmd = append(cmd, "--connect-timeout=10")
+		} else {
+			cmd = append(cmd, "--connect-timeout=10", fmt.Sprintf("--conf=/var/lib/rook/%s/%s.config", clusterNamespace, clusterNamespace))
+		}
+	} else if cmd[0] == "rbd" {
+		cmd = append(cmd, fmt.Sprintf("--conf=/var/lib/rook/%s/%s.config", clusterNamespace, clusterNamespace))
+	} else if cmd[0] == "rados" {
+		cmd = append(cmd, fmt.Sprintf("--conf=/var/lib/rook/%s/%s.config", clusterNamespace, clusterNamespace))
+	} else if cmd[0] == "radosgw-admin" {
+		cmd = append(cmd, fmt.Sprintf("--conf=/var/lib/rook/%s/%s.config", clusterNamespace, clusterNamespace))
+	}
+
+	// Prepare the API URL used to execute another process within the Pod.  In
+	// this case, we'll run a remote shell.
+	req := clientsets.Kube.CoreV1().RESTClient().
+		Post().
+		Namespace(podNamespace).
+		Resource("pods").
+		Name(podName).
+		SubResource("exec").
+		VersionedParams(&v1.PodExecOptions{
+			Container: containerName,
+			Command:   cmd,
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       false,
+		}, scheme.ParameterCodec)
+
+	exec, err := remotecommand.NewSPDYExecutor(clientsets.KubeConfig, "POST", req.URL())
+	if err != nil {
+		return fmt.Errorf("failed to create SPDYExecutor. %w", err)
+	}
+
+	// returnOutput is true, the command's output will be print on shell directly with os.Stdout or os.Stderr
+	if !returnOutput {
+		// Connect this process' std{in,out,err} to the remote shell process.
+		err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+			Tty:    false,
+		})
+	} else {
+		// Connect this process' std{in,out,err} to the remote shell process.
+		err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+			Stdout: stdout,
+			Stderr: stderr,
+			Tty:    false,
+		})
+	}
+	if err != nil {
+		return fmt.Errorf("failed to run command. %w", err)
+	}
 	return nil
 }
