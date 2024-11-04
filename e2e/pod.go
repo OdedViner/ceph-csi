@@ -774,32 +774,18 @@ func getClientsets(ctx context.Context) *k8sutil.Clientsets {
 
 // execCmdInPod exec command on specific pod and wait the command's output.
 func execCmdInPod(ctx context.Context, clientsets *k8sutil.Clientsets,
-	command, podName, containerName, podNamespace, clusterNamespace string,
-	args []string, stdout, stderr io.Writer, returnOutput bool) error {
+	commandStr string, stdout, stderr io.Writer, returnOutput bool) error {
+	podNamespace := "rook-ceph"
+	clusterNamespace := "rook-ceph"
+	pods, err := clientsets.Kube.CoreV1().Pods(clusterNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "app=rook-ceph-tools",
+	})
+	if err != nil {
 
-	if len(args) < 1 {
-		return fmt.Errorf("no arg passed to exec with %q command", command)
 	}
-
-	cmd := []string{}
-	cmd = append(cmd, command)
-	cmd = append(cmd, args...)
-
-	if containerName == "rook-ceph-tools" {
-		cmd = append(cmd, "--connect-timeout=10")
-	} else if cmd[0] == "ceph" {
-		if len(cmd) > 1 && cmd[1] == "daemon" {
-			cmd = append(cmd, "--connect-timeout=10")
-		} else {
-			cmd = append(cmd, "--connect-timeout=10", fmt.Sprintf("--conf=/var/lib/rook/%s/%s.config", clusterNamespace, clusterNamespace))
-		}
-	} else if cmd[0] == "rbd" {
-		cmd = append(cmd, fmt.Sprintf("--conf=/var/lib/rook/%s/%s.config", clusterNamespace, clusterNamespace))
-	} else if cmd[0] == "rados" {
-		cmd = append(cmd, fmt.Sprintf("--conf=/var/lib/rook/%s/%s.config", clusterNamespace, clusterNamespace))
-	} else if cmd[0] == "radosgw-admin" {
-		cmd = append(cmd, fmt.Sprintf("--conf=/var/lib/rook/%s/%s.config", clusterNamespace, clusterNamespace))
-	}
+	cmd := strings.Fields(commandStr)
+	podName := pods.Items[0].ObjectMeta.Name
+	containerName := "rook-ceph-tools"
 
 	// Prepare the API URL used to execute another process within the Pod.  In
 	// this case, we'll run a remote shell.

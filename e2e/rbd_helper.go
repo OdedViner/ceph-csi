@@ -17,6 +17,7 @@ limitations under the License.
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1084,6 +1085,33 @@ func getImageInfo(f *framework.Framework, imageName, poolName string) (imageInfo
 	}
 	if stdErr != "" {
 		return imgInfo, fmt.Errorf("failed to get rbd info: %v", stdErr)
+	}
+	err = json.Unmarshal([]byte(stdOut), &imgInfo)
+	if err != nil {
+		return imgInfo, fmt.Errorf("unmarshal failed: %w. raw buffer response: %s",
+			err, stdOut)
+	}
+
+	return imgInfo, nil
+}
+
+// getImageInfo queries rbd about the given image and returns its metadata, and returns
+// error if provided image is not found.
+func getImageInfoDebug(f *framework.Framework) (imageInfo, error) {
+	// rbd --format=json info [image-spec | snap-spec]
+	var imgInfo imageInfo
+	ctx := context.TODO()
+	clientsets := getClientsets(ctx)
+	var stdout, stdErr bytes.Buffer
+	commandStr := "rbd info --pool=replicapool csi-vol-f090b7e1-a821-4a71-a7d2-7e3e2aaea8d1 --format json"
+	err := execCmdInPod(ctx, clientsets, commandStr, &stdout, &stdErr, true)
+	stdOut := stdout.String()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	if err != nil {
+		return imgInfo, fmt.Errorf("failed to get rbd info: %w", err)
 	}
 	err = json.Unmarshal([]byte(stdOut), &imgInfo)
 	if err != nil {
