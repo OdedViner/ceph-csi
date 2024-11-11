@@ -20,16 +20,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rook/kubectl-rook-ceph/pkg/k8sutil"
-	rookclient "github.com/rook/rook/pkg/client/clientset/versioned"
 	"io"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/remotecommand"
 	"os"
 	"regexp"
 	"strings"
 	"time"
+	"bytes"
+
+	"github.com/rook/kubectl-rook-ceph/pkg/k8sutil"
+	rookclient "github.com/rook/rook/pkg/client/clientset/versioned"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
 
 	v1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
@@ -42,6 +44,7 @@ import (
 	"k8s.io/kubernetes/test/e2e/framework"
 	e2epod "k8s.io/kubernetes/test/e2e/framework/pod"
 	frameworkPod "k8s.io/kubernetes/test/e2e/framework/pod"
+	// "k8s.io/kubernetes/test/e2e/framework/pod/output"
 )
 
 const errRWOPConflict = "node has pod using PersistentVolumeClaim with the same name and ReadWriteOncePod access mode."
@@ -772,16 +775,19 @@ func getClientsets(ctx context.Context) *k8sutil.Clientsets {
 	return clientsets
 }
 
-// execCmdInPod exec command on specific pod and wait the command's output.
-func execCmdInPod(ctx context.Context, clientsets *k8sutil.Clientsets,
-	commandStr string, stdout, stderr io.Writer, returnOutput bool) error {
+// execCmdInToolPodDebug exec command on specific pod and wait the command's output.
+func execCmdInToolPodDebug(commandStr string)  (string, string, error)  {
+	ctx := context.TODO()
+	clientsets := getClientsets(ctx)
 	podNamespace := "rook-ceph"
 	clusterNamespace := "rook-ceph"
+    var stdout, stderr io.Writer = &bytes.Buffer{}, &bytes.Buffer{}
+	returnOutput := true
 	pods, err := clientsets.Kube.CoreV1().Pods(clusterNamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app=rook-ceph-tools",
 	})
 	if err != nil {
-
+		return "a", "a", fmt.Errorf("failed to get ceph tool pod. %w", err)
 	}
 	cmd := strings.Fields(commandStr)
 	podName := pods.Items[0].ObjectMeta.Name
@@ -805,7 +811,7 @@ func execCmdInPod(ctx context.Context, clientsets *k8sutil.Clientsets,
 
 	exec, err := remotecommand.NewSPDYExecutor(clientsets.KubeConfig, "POST", req.URL())
 	if err != nil {
-		return fmt.Errorf("failed to create SPDYExecutor. %w", err)
+		return "a", "a", fmt.Errorf("failed to create SPDYExecutor. %w", err)
 	}
 
 	// returnOutput is true, the command's output will be print on shell directly with os.Stdout or os.Stderr
@@ -825,7 +831,8 @@ func execCmdInPod(ctx context.Context, clientsets *k8sutil.Clientsets,
 		})
 	}
 	if err != nil {
-		return fmt.Errorf("failed to run command. %w", err)
+		return "a", "a", fmt.Errorf("failed to run command. %w", err)
 	}
-	return nil
+	outputSting := stdout.(*bytes.Buffer)
+	return outputSting.String(), "" , nil
 }

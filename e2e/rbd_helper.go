@@ -17,7 +17,6 @@ limitations under the License.
 package e2e
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1064,10 +1063,23 @@ func waitToRemoveImagesFromTrash(f *framework.Framework, poolName string, t int)
 
 // imageInfo strongly typed JSON spec for image info.
 type imageInfo struct {
-	Name        string `json:"name"`
-	StripeUnit  int    `json:"stripe_unit"`
-	StripeCount int    `json:"stripe_count"`
-	ObjectSize  int    `json:"object_size"`
+    Name             string   `json:"name"`
+    ID               string   `json:"id"`
+    Size             int64    `json:"size"`
+    Objects          int      `json:"objects"`
+    Order            int      `json:"order"`
+    ObjectSize       int      `json:"object_size"`
+    SnapshotCount    int      `json:"snapshot_count"`
+    BlockNamePrefix  string   `json:"block_name_prefix"`
+    Format           int      `json:"format"`
+    Features         []string `json:"features"`
+    OpFeatures       []string `json:"op_features"`
+    Flags            []string `json:"flags"`
+    CreateTimestamp  string   `json:"create_timestamp"`
+    AccessTimestamp  string   `json:"access_timestamp"`
+    ModifyTimestamp  string   `json:"modify_timestamp"`
+    StripeUnit       int      `json:"stripe_unit"`  // New field added
+    StripeCount      int      `json:"stripe_count"` // New field added
 }
 
 // getImageInfo queries rbd about the given image and returns its metadata, and returns
@@ -1100,12 +1112,9 @@ func getImageInfo(f *framework.Framework, imageName, poolName string) (imageInfo
 func getImageInfoDebug(f *framework.Framework) (imageInfo, error) {
 	// rbd --format=json info [image-spec | snap-spec]
 	var imgInfo imageInfo
-	ctx := context.TODO()
-	clientsets := getClientsets(ctx)
-	var stdout, stdErr bytes.Buffer
-	commandStr := "rbd info --pool=replicapool csi-vol-f090b7e1-a821-4a71-a7d2-7e3e2aaea8d1 --format json"
-	err := execCmdInPod(ctx, clientsets, commandStr, &stdout, &stdErr, true)
-	stdOut := stdout.String()
+	commandStr := "rbd info --pool=replicapool csi-vol-a85efba1-37ed-46cf-ae64-e43bd372510b --format json"
+	stdOut, _ , err := execCmdInToolPodDebug(commandStr)
+
 	if err != nil {
 		fmt.Println(err)
 	}
